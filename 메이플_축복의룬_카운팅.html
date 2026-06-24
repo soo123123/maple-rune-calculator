@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>축복룬 추적기</title>
+
+<style>
+body{
+    font-family:sans-serif;
+    padding:20px;
+}
+
+button{
+    margin-right:5px;
+    margin-bottom:10px;
+}
+
+table{
+    border-collapse:collapse;
+}
+
+th,td{
+    border:1px solid #aaa;
+    width:70px;
+    height:45px;
+    text-align:center;
+    vertical-align:middle;
+}
+
+th{
+    background:#f2f2f2;
+}
+
+.blocked{
+    background:#fff;
+    color:#666;
+}
+
+.available{
+    background:#fff3a0;
+}
+
+.warning{
+    background:#ffe2b8;
+}
+
+.danger{
+    background:#f0d0ff;
+}
+
+.guaranteed{
+    background:#d8b4fe;
+}
+
+.empty{
+    background:#fff;
+    cursor:pointer;
+}
+
+.blessed{
+    background:#fff;
+    cursor:pointer;
+}
+
+.circle{
+    width:16px;
+    height:16px;
+    border-radius:50%;
+    background:#2ecc71;
+    margin:auto;
+}
+
+.highlight-row td,
+.highlight-row th{
+    background:#b8f5b8 !important;
+}
+
+.diagonal-header{
+    position:relative;
+    width:130px;
+    height:60px;
+    padding:0;
+}
+
+/* 대각선 */
+.diagonal-header::before{
+    content:"";
+    position:absolute;
+    inset:0;
+
+    background:
+    linear-gradient(
+        to bottom left,
+        transparent 49%,
+        #666 49.5%,
+        #666 50.5%,
+        transparent 51%
+    );
+}
+
+.bottom-left{
+    position:absolute;
+    left:6px;
+    bottom:4px;
+    font-size:22px;
+}
+
+/* 오른쪽 위 룬 */
+.top-right{
+    position:absolute;
+    right:6px;
+    top:4px;
+    font-size:22px;
+}
+
+.manual-green{
+    background:#b8f5b8 !important;
+}
+</style>
+</head>
+<body>
+
+<button onclick="addRow()">행 추가</button>
+<button onclick="removeRow()">행 삭제</button>
+<button onclick="addCol()">열 추가</button>
+<button onclick="removeCol()">열 삭제</button>
+<button onclick="trimTopRows(1)">행 당기기</button>
+<button onclick="shiftCellsLeft()">셀 당기기</button>
+<button onclick="saveData()">저장</button>
+<button id="loadBtn"onclick="loadData()">불러오기</button>
+<button onclick="resetAll()">초기화</button>
+
+<table id="tbl"></table>
+
+<script>
+
+let rows = 6;
+let cols = 2;
+let hiddenCount = 0;
+
+const blessings = new Set();
+const highlightedRows = new Set();
+const greenCells = new Set();
+const archivedRows = [];
+const MAX_HIDDEN = 10;
+
+/// --- ///
+
+function shiftCellsLeft(){
+
+    hiddenCount++;
+
+    if(hiddenCount > MAX_HIDDEN){
+
+        const deleteCount =
+            hiddenCount - MAX_HIDDEN;
+
+        deleteOldCells(deleteCount);
+
+        hiddenCount = MAX_HIDDEN;
+    }
+
+    buildTable();
+}
+
+function deleteOldCells(deleteCount){
+
+    const newBlessings = new Set();
+    const newGreenCells = new Set();
+
+    blessings.forEach(v=>{
+
+        let [r,c] = v.split("_").map(Number);
+
+        let idx = r * cols + c;
+
+        if(idx >= deleteCount){
+
+            idx -= deleteCount;
+
+            r = Math.floor(idx / cols);
+            c = idx % cols;
+
+            newBlessings.add(`${r}_${c}`);
+        }
+    });
+
+    greenCells.forEach(v=>{
+
+        let [r,c] = v.split("_").map(Number);
+
+        let idx = r * cols + c;
+
+        if(idx >= deleteCount){
+
+            idx -= deleteCount;
+
+            r = Math.floor(idx / cols);
+            c = idx % cols;
+
+            newGreenCells.add(`${r}_${c}`);
+        }
+    });
+
+    blessings.clear();
+    greenCells.clear();
+
+    newBlessings.forEach(v=>blessings.add(v));
+    newGreenCells.forEach(v=>greenCells.add(v));
+}
+
+function trimTopRows(count){
+
+    hiddenCount += count * cols;
+
+    if(hiddenCount > MAX_HIDDEN){
+
+        const deleteCount =
+            hiddenCount - MAX_HIDDEN;
+
+        deleteOldCells(deleteCount);
+
+        hiddenCount = MAX_HIDDEN;
+    }
+
+    buildTable();
+}
+
+function loadData(){
+
+    const raw =
+        localStorage.getItem("runeTracker");
+
+    if(!raw) return;
+
+    const data = JSON.parse(raw);
+
+    rows = data.rows;
+    cols = data.cols;
+    hiddenCount = data.hiddenCount || 0;
+
+    blessings.clear();
+    highlightedRows.clear();
+    greenCells.clear();
+
+    data.blessings.forEach(v=>blessings.add(v));
+
+    data.highlightedRows.forEach(v=>
+        highlightedRows.add(v));
+
+    data.greenCells.forEach(v=>
+        greenCells.add(v));
+
+    buildTable();
+}
+
+function updateLoadButton(){
+
+    const btn =
+        document.getElementById("loadBtn");
+
+    btn.disabled =
+        !localStorage.getItem("runeTracker");
+}
+
+function saveData(){
+
+    const data = {
+
+        rows,
+        cols,
+        hiddenCount,
+        blessings:[...blessings],
+        highlightedRows:[...highlightedRows],
+        greenCells:[...greenCells]
+    };
+
+    localStorage.setItem(
+        "runeTracker",
+        JSON.stringify(data)
+    );
+
+    updateLoadButton();
+}
+
+function resetAll(){
+
+    if(!confirm("모든 데이터를 초기화하시겠습니까?")){
+        return;
+    }
+
+    blessings.clear();
+    greenCells.clear();
+    highlightedRows.clear();
+
+    hiddenCount = 0;
+
+    localStorage.removeItem("runeTracker");
+
+    buildTable();
+    updateLoadButton();
+}
+
+function key(r,c){
+    return `${r}_${c}`;
+}
+
+function buildTable(){
+
+    const tbl = document.getElementById("tbl");
+    tbl.innerHTML="";
+
+    const head = document.createElement("tr");
+
+const corner = document.createElement("th");
+
+corner.className = "diagonal-header";
+
+corner.innerHTML = `
+    <span class="bottom-left">사냥</span>
+    <span class="top-right">룬</span>
+`;
+
+head.appendChild(corner);
+    for(let c=0;c<cols;c++){
+
+        const th=document.createElement("th");
+        th.textContent=c+1 + "번 룬";
+
+        head.appendChild(th);
+    }
+
+    tbl.appendChild(head);
+
+    for(let r=0;r<rows;r++){
+
+        const tr=document.createElement("tr");
+
+        const rowHeader=document.createElement("th");
+        rowHeader.textContent=(r+1) + " 번째 사냥";
+
+        rowHeader.style.cursor="pointer";
+
+        rowHeader.onclick=()=>{
+
+            if(highlightedRows.has(r)){
+                highlightedRows.delete(r);
+            }else{
+                highlightedRows.add(r);
+            }
+
+            updateRowHighlight();
+        };
+
+        tr.appendChild(rowHeader);
+
+        for(let c=0;c<cols;c++){
+            const td = document.createElement("td");
+
+            let idx = (r * cols + c) + hiddenCount;
+            
+            let realRow = Math.floor(idx / cols);
+            let realCol = idx % cols;
+
+            td.dataset.row = realRow;
+            td.dataset.col = realCol;
+
+            tr.appendChild(td);
+        }
+
+        tbl.appendChild(tr);
+    }
+
+    recalc();
+}
+
+function recalc(){
+
+    const allCells=[...document.querySelectorAll("td")];
+
+    allCells.forEach(td=>{
+        td.className="empty";
+        td.innerHTML="";
+    });
+
+    let blocked=new Set();
+
+    let blessIndexes=[];
+
+    blessings.forEach(v=>{
+
+        const [r,c]=v.split("_").map(Number);
+
+        blessIndexes.push(r*cols+c);
+    });
+
+    blessIndexes.sort((a,b)=>a-b);
+
+    blessIndexes.forEach(index=>{
+
+        for(let i=1;i<=4;i++){
+            blocked.add(index+i);
+        }
+    });
+
+    allCells.forEach(td=>{
+
+        const r=Number(td.dataset.row);
+        const c=Number(td.dataset.col);
+
+        const idx = r * cols + c;
+        const k=key(r,c);
+
+        if(blessings.has(k)){
+
+            td.className="blessed";
+            td.innerHTML='<div class="circle"></div>';
+            
+            if(greenCells.has(k)){
+                td.classList.add("manual-green");
+            }
+
+            return;
+        }
+
+        if(blocked.has(idx)){
+
+            td.className="blocked";
+            td.textContent="-";
+
+            if(greenCells.has(k)){
+                td.classList.add("manual-green");
+            }
+
+            return;
+        }
+
+        // let available=false;
+
+        // for(const b of blessIndexes){
+
+        //     if(idx>b+4){
+        //         available=true;
+        //         break;
+        //     }
+        // }
+
+        // this //
+        let lastBlessIndex = -1;
+
+        for(const b of blessIndexes){
+            if(b < idx){
+                lastBlessIndex = b;
+            }else{
+                break;
+            }
+        }
+
+        if(lastBlessIndex !== -1){
+            const distance = idx - lastBlessIndex;
+
+            if(distance === 5){
+                td.className = "available";
+            }
+            else if(distance === 6){
+                td.className = "warning";
+            }
+            else if(distance === 7){
+                td.className = "danger";
+            }
+            else if(distance >= 8){
+                td.className = "guaranteed";
+            }
+            else{
+                td.className = "empty";
+            }
+        }
+        else{
+            td.className = "empty";
+        }
+
+        // if(available){
+        //     td.className="available";
+        // }else{
+        //     td.className="empty";
+        // }
+        if(greenCells.has(k)){
+            td.classList.add("manual-green");
+        }
+    });
+
+
+    attachEvents();
+    updateRowHighlight();
+}
+
+function attachEvents(){
+
+    document.querySelectorAll("td").forEach(td=>{
+
+        td.onclick=()=>{
+
+            if(td.classList.contains("blocked")){
+                return;
+            }
+
+            const r=td.dataset.row;
+            const c=td.dataset.col;
+
+            const k=key(r,c);
+
+            if(blessings.has(k)){
+                blessings.delete(k);
+            }else{
+                blessings.add(k);
+            }
+
+            recalc();
+        };
+        
+        td.oncontextmenu=(e) =>{
+            e.preventDefault();
+        
+            const r=td.dataset.row;
+            const c=td.dataset.col;
+        
+            const k=key(r,c);
+        
+            if(greenCells.has(k)){
+                greenCells.delete(k);
+            }else{
+                greenCells.add(k);
+            }
+        
+            // this //
+            console.log(greenCells);
+
+            recalc();
+        }
+        
+    });
+}
+
+
+function updateRowHighlight(){
+
+    const rowsEl = document.querySelectorAll("#tbl tr");
+
+    rowsEl.forEach((tr,index)=>{
+
+        if(index===0) return;
+
+        const rowNumber=index-1;
+
+        if(highlightedRows.has(rowNumber)){
+            tr.classList.add("highlight-row");
+        }else{
+            tr.classList.remove("highlight-row");
+        }
+    });
+}
+
+function addRow(){
+
+    rows++;
+    buildTable();
+}
+
+function removeRow(){
+
+    if(rows<=1) return;
+
+    rows--;
+
+    [...blessings].forEach(v=>{
+
+        const r=Number(v.split("_")[0]);
+
+        if(r>=rows){
+            blessings.delete(v);
+        }
+    });
+
+    [...highlightedRows].forEach(r=>{
+
+        if(r>=rows){
+            highlightedRows.delete(r);
+        }
+    });
+
+    buildTable();
+}
+
+function addCol(){
+
+    cols++;
+    blessings.clear();
+
+    buildTable();
+}
+
+function removeCol(){
+
+    if(cols<=1) return;
+
+    cols--;
+
+    blessings.clear();
+
+    buildTable();
+}
+
+
+
+buildTable();
+updateLoadButton();
+
+</script>
+
+</body>
+</html>
